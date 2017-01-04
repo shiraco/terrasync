@@ -209,8 +209,8 @@ var google_calendar_id, _ = getCalendarId()
 func main() {
 
   // set proxies
-  os.Setenv("HTTP_PROXY", "")
-  os.Setenv("HTTPS_PROXY", "")
+  //os.Setenv("HTTP_PROXY", "")
+  //os.Setenv("HTTPS_PROXY", "")
 
   ctx := context.Background()
 
