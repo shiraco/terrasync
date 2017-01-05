@@ -29,8 +29,7 @@ _testmain.go
 
 # application
 client_secret.json
-config.json
-schedule.ics*
+config.tml
 tmp/
 bin/
 

@@ -11,15 +11,16 @@ import (
   "os/user"
   "path/filepath"
   "time"
-  "strings"
+  "bufio"
 
   "golang.org/x/net/context"
   "golang.org/x/oauth2"
   "golang.org/x/oauth2/google"
   "google.golang.org/api/calendar/v3"
 
-  "github.com/mattn/go-scan"
   "github.com/PuloV/ics-golang"
+  "github.com/BurntSushi/toml"
+  "github.com/headzoo/surf"
 )
 
 const APP_NAME string = "terrasync"
@@ -72,22 +73,6 @@ func tokenCacheFile() (string, error) {
     url.QueryEscape(APP_NAME + ".json")), err
 }
 
-func getCalendarId() (string, error) {
-
-  j, err := ioutil.ReadFile("config.json")
-  if err != nil {
-    log.Fatalf("Unable to open file: %v", err)
-  }
-
-  var js = strings.NewReader(string(j))
-
-  var s string
-  if err := scan.ScanJSON(js, "/google_calendar_id", &s); err != nil {
-      fmt.Println(err.Error())
-  }
-  return s, err
-}
-
 // tokenFromFile retrieves a Token from a given file path.
 // It returns the retrieved Token and any read error encountered.
 func tokenFromFile(file string) (*oauth2.Token, error) {
@@ -116,7 +101,7 @@ func saveToken(file string, token *oauth2.Token) {
 // delete events
 func deleteOldEvents(start string, end string, srv *calendar.Service) {
 
-  oldEvents, err := srv.Events.List(google_calendar_id).ShowDeleted(false).
+  oldEvents, err := srv.Events.List(config.Google.CalendarId).ShowDeleted(false).
   SingleEvents(true).TimeMin(start).TimeMax(end).OrderBy("startTime").Do()
   if err != nil {
     log.Fatalf("Unable to retrieve next ten of the user's events. %v", err)
@@ -126,7 +111,7 @@ func deleteOldEvents(start string, end string, srv *calendar.Service) {
 
   if len(oldEvents.Items) > 0 {
     for _, i := range oldEvents.Items {
-      srv.Events.Delete(google_calendar_id, i.Id).Do()
+      srv.Events.Delete(config.Google.CalendarId, i.Id).Do()
       fmt.Printf("del %s \n", i.Id)
     }
   } else {
@@ -167,7 +152,7 @@ func insertNewEvents(icsFile string, termStart string, termEnd string, srv *cale
           },
         }
 
-        newEvent, err = srv.Events.Insert(google_calendar_id, newEvent).Do()
+        newEvent, err = srv.Events.Insert(config.Google.CalendarId, newEvent).Do()
 
         if err != nil {
           log.Fatalf("Unable to create event. %v\n", err)
@@ -198,15 +183,68 @@ func calcTerm(now time.Time, term_month int, srv *calendar.Service) (string, str
   return start, end
 }
 
-type Config struct {
-  Id int
-  Name string
-  Array []int
+func terra() {
+  // Create a new browser and open.
+  bow := surf.NewBrowser()
+  err := bow.Open(config.Terra.LoginUrl)
+  if err != nil {
+      panic(err)
+  }
+
+  // Log in to the site.
+  fm, _ := bow.Form("form#login_form")
+  fm.Input("username", config.Terra.Username)
+  fm.Input("password", config.Terra.Password)
+  if fm.Submit() != nil {
+      panic(err)
+  }
+
+  err = bow.Open(config.Terra.DownloadUrl)
+
+  filename := "./tmp/hoge.csv"
+  f, err := os.Create(filename)
+  if err != nil {
+      log.Printf("Error creating file '%s'.", filename)
+  }
+  defer f.Close()
+
+  csv := bow.Body()
+  writer := bufio.NewWriter(f)
+
+  _, err = writer.WriteString(csv)
+  if err != nil {
+      log.Fatal(err)
+  }
+  writer.Flush()
+
 }
 
-var google_calendar_id, _ = getCalendarId()
+
+type Config struct {
+  Google GoogleConfig
+  Terra  TerraConfig
+}
+
+type GoogleConfig struct {
+  CalendarId string `toml:"calendar_id"`
+}
+
+type TerraConfig struct {
+  LoginUrl string `toml:"login_url"`
+  DownloadUrl string `toml:"download_url"`
+  Username string `toml:"username"`
+  Password string `toml:"password"`
+}
+
+var config Config
 
 func main() {
+
+  _, err := toml.DecodeFile("config.tml", &config)
+  if err != nil {
+      panic(err)
+  }
+  fmt.Printf("CalendarId is :%s\n", config.Google.CalendarId)
 
   // set proxies
   //os.Setenv("HTTP_PROXY", "")
@@ -234,7 +272,7 @@ func main() {
 
   start, end := calcTerm(time.Now(), TERM_MONTH, srv)
 
-  // downloadCalendar()
+  terra()
   deleteOldEvents(start, end, srv)
   insertNewEvents("./tmp/schedule.ics", start, end, srv)
 

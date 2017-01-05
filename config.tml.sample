@@ -1,0 +1,8 @@
+[google]
+calendar_id = "xxxxxxxx@group.calendar.google.com"
+
+[terra]
+login_url = "https://example.com/login/"
+download_url = "https://example.com/download/"
+username = "hoge@example.com"
+password = "pass"

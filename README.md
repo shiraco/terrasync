@@ -5,7 +5,7 @@ terrasync.go
 
 * google developer account / calendar api
 * client_secret.json
-* config.json
+* config.tml (copy from config.tml.sample & update)
 
 ## Usage
 
