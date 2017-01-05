@@ -21,10 +21,31 @@ import (
   "github.com/PuloV/ics-golang"
   "github.com/BurntSushi/toml"
   "github.com/headzoo/surf"
+  "github.com/headzoo/surf/agent"
 )
 
 const APP_NAME string = "terrasync"
 const TERM_MONTH int = 3
+const ICS_FILE_NAME = "./tmp/schedule.ics"
+
+type Config struct {
+  Google GoogleConfig
+  Terra  TerraConfig
+}
+
+type GoogleConfig struct {
+  CalendarId string `toml:"calendar_id"`
+}
+
+type TerraConfig struct {
+  LoginUrl string `toml:"login_url"`
+  DownloadUrl string `toml:"download_url"`
+  Username string `toml:"username"`
+  Password string `toml:"password"`
+}
+
+var config Config
+
 
 // getClient uses a Context and Config to retrieve a Token
 // then generate a Client. It returns the generated Client.
@@ -169,6 +190,7 @@ func insertNewEvents(icsFile string, termStart string, termEnd string, srv *cale
   } else {
     fmt.Printf("No insertable events found.\n")
     fmt.Println(err)
+
   }
 }
 
@@ -183,28 +205,43 @@ func calcTerm(now time.Time, term_month int, srv *calendar.Service) (string, str
   return start, end
 }
 
-func terra() {
+func downloadTerraSchedule(icsFile string) {
+
+
+  // Unset proxies
+  prev_http_proxy := os.Getenv("HTTP_PROXY")
+  prev_https_proxy := os.Getenv("HTTPS_PROXY")
+  os.Setenv("HTTP_PROXY", "")
+  os.Setenv("HTTPS_PROXY", "")
+
   // Create a new browser and open.
   bow := surf.NewBrowser()
+  bow.SetUserAgent(agent.Chrome())
+
   err := bow.Open(config.Terra.LoginUrl)
   if err != nil {
       panic(err)
   }
 
   // Log in to the site.
-  fm, _ := bow.Form("form#login_form")
-  fm.Input("username", config.Terra.Username)
+  fm, err := bow.Form("form[name=loginForm]")
+
+  if err != nil {
+      log.Printf("Error access form '%s'.", err)
+  }
+
+  fm.Input("loginName", config.Terra.Username)
   fm.Input("password", config.Terra.Password)
+
   if fm.Submit() != nil {
       panic(err)
   }
 
   err = bow.Open(config.Terra.DownloadUrl)
 
-  filename := "./tmp/hoge.csv"
-  f, err := os.Create(filename)
+  f, err := os.Create(icsFile)
   if err != nil {
-      log.Printf("Error creating file '%s'.", filename)
+      log.Printf("Error creating file '%s'.", icsFile)
   }
   defer f.Close()
 
@@ -217,54 +254,38 @@ func terra() {
   }
   writer.Flush()
 
+  // Unset proxies
+  os.Setenv("HTTP_PROXY", prev_http_proxy)
+  os.Setenv("HTTPS_PROXY", prev_https_proxy)
+
+  fmt.Println("Downloaded.")
+
 }
-
-
-type Config struct {
-  Google GoogleConfig
-  Terra  TerraConfig
-}
-
-type GoogleConfig struct {
-  CalendarId string `toml:"calendar_id"`
-}
-
-type TerraConfig struct {
-  LoginUrl string `toml:"login_url"`
-  DownloadUrl string `toml:"download_url"`
-  Username string `toml:"username"`
-  Password string `toml:"password"`
-}
-
-var config Config
 
 func main() {
 
+  // config
   _, err := toml.DecodeFile("config.tml", &config)
   if err != nil {
       panic(err)
   }
-  fmt.Printf("CalendarId is :%s\n", config.Google.CalendarId)
 
-  // set proxies
-  //os.Setenv("HTTP_PROXY", "")
-  //os.Setenv("HTTPS_PROXY", "")
-
-  ctx := context.Background()
-
+  // client_secret
   b, err := ioutil.ReadFile("client_secret.json")
   if err != nil {
     log.Fatalf("Unable to read client secret file: %v", err)
   }
 
   // If modifying these scopes, delete your previously saved credentials
-  // at ~/.credentials/calendar-go-quickstart.json
+  // at ~/.credentials/terrasync.json
   config, err := google.ConfigFromJSON(b, calendar.CalendarScope)
   if err != nil {
     log.Fatalf("Unable to parse client secret file to config: %v", err)
   }
-  client := getClient(ctx, config)
 
+  // Calendar Service
+  ctx := context.Background()
+  client := getClient(ctx, config)
   srv, err := calendar.New(client)
   if err != nil {
     log.Fatalf("Unable to retrieve calendar Client %v", err)
@@ -272,8 +293,8 @@ func main() {
 
   start, end := calcTerm(time.Now(), TERM_MONTH, srv)
 
-  terra()
+  downloadTerraSchedule(ICS_FILE_NAME)
   deleteOldEvents(start, end, srv)
-  insertNewEvents("./tmp/schedule.ics", start, end, srv)
+  insertNewEvents(ICS_FILE_NAME, start, end, srv)
 
 }
