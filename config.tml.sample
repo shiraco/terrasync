@@ -1,8 +1,9 @@
+[terra]
+user_id = "9999" # see terra profile page
+user_name = "tie999999"
+password = "pass"
+
 [google]
 calendar_id = "xxxxxxxx@group.calendar.google.com"
+delete_term_month = 3 # = terra's downloaded term
 
-[terra]
-login_url = "https://example.com/login/"
-download_url = "https://example.com/download/"
-username = "hoge@example.com"
-password = "pass"

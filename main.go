@@ -24,8 +24,9 @@ import (
   "github.com/headzoo/surf/agent"
 )
 
+// config setting
+
 const APP_NAME string = "terrasync"
-const TERM_MONTH int = 3
 const ICS_FILE_NAME = "./tmp/schedule.ics"
 
 type Config struct {
@@ -35,17 +36,16 @@ type Config struct {
 
 type GoogleConfig struct {
   CalendarId string `toml:"calendar_id"`
+  DeleteTermMonth int `toml:"delete_term_month"`
 }
 
 type TerraConfig struct {
-  LoginUrl string `toml:"login_url"`
-  DownloadUrl string `toml:"download_url"`
-  Username string `toml:"username"`
+  UserId string `toml:"user_id"`
+  UserName string `toml:"user_name"`
   Password string `toml:"password"`
 }
 
 var config Config
-
 
 // getClient uses a Context and Config to retrieve a Token
 // then generate a Client. It returns the generated Client.
@@ -120,7 +120,7 @@ func saveToken(file string, token *oauth2.Token) {
 }
 
 // delete events
-func deleteOldEvents(start string, end string, srv *calendar.Service) {
+func deleteGCalOldEvents(start string, end string, srv *calendar.Service) {
 
   oldEvents, err := srv.Events.List(config.Google.CalendarId).ShowDeleted(false).
   SingleEvents(true).TimeMin(start).TimeMax(end).OrderBy("startTime").Do()
@@ -142,7 +142,7 @@ func deleteOldEvents(start string, end string, srv *calendar.Service) {
 }
 
 // insert events
-func insertNewEvents(icsFile string, termStart string, termEnd string, srv *calendar.Service) {
+func insertGCalNewEvents(icsFile string, termStart string, termEnd string, srv *calendar.Service) {
 
   fmt.Println("Insert events:")
 
@@ -195,10 +195,10 @@ func insertNewEvents(icsFile string, termStart string, termEnd string, srv *cale
 }
 
 // calc term
-func calcTerm(now time.Time, term_month int, srv *calendar.Service) (string, string) {
+func calcTerm(now time.Time, termMonth int, srv *calendar.Service) (string, string) {
 
   start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local).Format(time.RFC3339)
-  end := time.Date(now.Year(), now.Month() + time.Month(term_month), 1, 23, 59, 59, 0, time.Local).AddDate(0, 0, -1).Format(time.RFC3339)
+  end := time.Date(now.Year(), now.Month() + time.Month(termMonth), 1, 23, 59, 59, 0, time.Local).AddDate(0, 0, -1).Format(time.RFC3339)
 
   fmt.Printf("from %s to %s\n", start, end)
 
@@ -207,10 +207,9 @@ func calcTerm(now time.Time, term_month int, srv *calendar.Service) (string, str
 
 func downloadTerraSchedule(icsFile string) {
 
-
   // Unset proxies
-  prev_http_proxy := os.Getenv("HTTP_PROXY")
-  prev_https_proxy := os.Getenv("HTTPS_PROXY")
+  prevHttpProxy := os.Getenv("HTTP_PROXY")
+  prevHttpsProxy := os.Getenv("HTTPS_PROXY")
   os.Setenv("HTTP_PROXY", "")
   os.Setenv("HTTPS_PROXY", "")
 
@@ -218,7 +217,7 @@ func downloadTerraSchedule(icsFile string) {
   bow := surf.NewBrowser()
   bow.SetUserAgent(agent.Chrome())
 
-  err := bow.Open(config.Terra.LoginUrl)
+  err := bow.Open("http://terra.intra.tis.co.jp/aqua/")
   if err != nil {
       panic(err)
   }
@@ -230,14 +229,14 @@ func downloadTerraSchedule(icsFile string) {
       log.Printf("Error access form '%s'.", err)
   }
 
-  fm.Input("loginName", config.Terra.Username)
+  fm.Input("loginName", config.Terra.UserName)
   fm.Input("password", config.Terra.Password)
 
   if fm.Submit() != nil {
       panic(err)
   }
 
-  err = bow.Open(config.Terra.DownloadUrl)
+  err = bow.Open("http://terra.intra.tis.co.jp/aqua/" + config.Terra.UserId + "/schedule/view?aqua_format=ical&exa=ical")
 
   f, err := os.Create(icsFile)
   if err != nil {
@@ -255,8 +254,8 @@ func downloadTerraSchedule(icsFile string) {
   writer.Flush()
 
   // Unset proxies
-  os.Setenv("HTTP_PROXY", prev_http_proxy)
-  os.Setenv("HTTPS_PROXY", prev_https_proxy)
+  os.Setenv("HTTP_PROXY", prevHttpProxy)
+  os.Setenv("HTTPS_PROXY", prevHttpsProxy)
 
   fmt.Println("Downloaded.")
 
@@ -278,23 +277,24 @@ func main() {
 
   // If modifying these scopes, delete your previously saved credentials
   // at ~/.credentials/terrasync.json
-  config, err := google.ConfigFromJSON(b, calendar.CalendarScope)
+  conf, err := google.ConfigFromJSON(b, calendar.CalendarScope)
   if err != nil {
     log.Fatalf("Unable to parse client secret file to config: %v", err)
   }
 
   // Calendar Service
   ctx := context.Background()
-  client := getClient(ctx, config)
+  client := getClient(ctx, conf)
   srv, err := calendar.New(client)
   if err != nil {
     log.Fatalf("Unable to retrieve calendar Client %v", err)
   }
 
-  start, end := calcTerm(time.Now(), TERM_MONTH, srv)
 
   downloadTerraSchedule(ICS_FILE_NAME)
-  deleteOldEvents(start, end, srv)
-  insertNewEvents(ICS_FILE_NAME, start, end, srv)
+
+  start, end := calcTerm(time.Now(), config.Google.DeleteTermMonth, srv)
+  deleteGCalOldEvents(start, end, srv)
+  insertGCalNewEvents(ICS_FILE_NAME, start, end, srv)
 
 }
