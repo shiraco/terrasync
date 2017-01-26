@@ -159,17 +159,25 @@ func insertGCalNewEvents(icsFile string, termStart string, termEnd string, srv *
       ts, err := time.Parse(time.RFC3339, termStart)
       te, err := time.Parse(time.RFC3339, termEnd)
 
+      updatedAt := time.Now().Format(time.RFC3339)
+
+      jst := 9 * time.Hour
+
       if !e.GetStart().Before(ts) && !e.GetStart().After(te) { // ts <= e.GetStart() && e.GetStart() <= te
 
         newEvent := &calendar.Event{
           Summary: e.GetSummary(),
           Location: e.GetLocation(),
-          Description: e.GetDescription(),
+          Description: e.GetDescription() + "\n\n" + "updated: " + updatedAt,
           Start: &calendar.EventDateTime{
-            DateTime: e.GetStart().Format(time.RFC3339),
+            // TODO: use timezone
+            DateTime: e.GetStart().Add(-jst).Format(time.RFC3339),
+            TimeZone: "Asia/Tokyo",
           },
           End: &calendar.EventDateTime{
-            DateTime: e.GetEnd().Format(time.RFC3339),
+            // TODO: use timezone
+            DateTime: e.GetEnd().Add(-jst).Format(time.RFC3339),
+            TimeZone: "Asia/Tokyo",
           },
         }
 
@@ -179,6 +187,7 @@ func insertGCalNewEvents(icsFile string, termStart string, termEnd string, srv *
           log.Fatalf("Unable to create event. %v\n", err)
         }
         fmt.Printf("Event created: %s\n", newEvent.HtmlLink)
+
         //fmt.Printf("%s %s %s %s %s %s\n", newEvent.GetSummary(), newEvent.GetStart().Format(time.RFC3339),
         //  newEvent.GetEnd().Format(time.RFC3339), newEvent.GetLocation(), newEvent.GetDescription(), newEvent.GetWholeDayEvent())
       } else {
